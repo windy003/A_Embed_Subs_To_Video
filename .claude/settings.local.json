@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:mvnrepository.com)",
+      "Bash(curl:*)",
+      "WebFetch(domain:repo1.maven.org)",
+      "Bash(unzip -l /tmp/ffmpegkit.aar)",
+      "Bash(unzip -p /tmp/ffmpegkit.aar classes.jar)",
+      "Bash(unzip -l /tmp/ffmpegkit_classes.jar)",
+      "Bash(unzip -p /tmp/ffmpegkit_classes.jar com/antonkarpenko/ffmpegkit/FFmpegKitConfig.class)",
+      "Bash(grep -oaP \"[a-zA-Z]{4,50}\" /tmp/ffc.class)"
+    ]
+  }
+}
