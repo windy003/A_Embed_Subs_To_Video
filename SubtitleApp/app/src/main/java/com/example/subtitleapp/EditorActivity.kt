@@ -35,6 +35,10 @@ class EditorActivity : AppCompatActivity() {
     private var videoW = 0
     private var videoH = 0
 
+    // 当前正在显示的字幕索引，用于保存/加载独立坐标
+    private var currentSubtitleIndex = -1
+    private var overlayReady = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityEditorBinding.inflate(layoutInflater)
@@ -119,7 +123,6 @@ class EditorActivity : AppCompatActivity() {
                 }
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_READY) {
-                        // 播放器准备好后计算视频显示区域，初始化字幕叠加
                         binding.playerView.post { setupSubtitleOverlay() }
                     }
                 }
@@ -139,18 +142,15 @@ class EditorActivity : AppCompatActivity() {
         val viewH = playerView.height
         if (viewW <= 0 || viewH <= 0) return
 
-        // 计算 fit-center 后视频的实际显示区域
         val videoAspect = videoW.toFloat() / videoH
         val viewAspect = viewW.toFloat() / viewH
 
         val displayW: Int
         val displayH: Int
         if (videoAspect > viewAspect) {
-            // 视频更宽，上下留黑边
             displayW = viewW
             displayH = (viewW / videoAspect).toInt()
         } else {
-            // 视频更高，左右留黑边
             displayH = viewH
             displayW = (viewH * videoAspect).toInt()
         }
@@ -160,28 +160,40 @@ class EditorActivity : AppCompatActivity() {
 
         val overlay = binding.tvCurrentSubtitle as OutlineTextView
 
-        // 告诉 OutlineTextView 视频的实际显示区域
         overlay.setVideoDisplayRect(offsetX, offsetY, offsetX + displayW, offsetY + displayH)
 
-        // 基准字号：与 ASS 一致 = displayHeight / 22
-        // ASS 中 FontSize 基于 PlayResY，预览中按 displayH 等比缩放
         val baseFontPx = displayH / 22f
         overlay.setBaseFontSize(baseFontPx)
-        overlay.setScale(app.subtitleScale)
 
-        // 设置宽度与视频显示区域一致，防止文字溢出视频两侧
         overlay.layoutParams = overlay.layoutParams.apply {
             width = displayW
         }
-        overlay.x = offsetX.toFloat()
 
-        // 恢复位置
-        overlay.setPositionInVideo(app.subtitlePositionY)
+        // 拖拽/缩放时保存到当前字幕条目
+        overlay.onPositionChanged = { xRatio, yRatio ->
+            if (currentSubtitleIndex in app.subtitles.indices) {
+                app.subtitles[currentSubtitleIndex] = app.subtitles[currentSubtitleIndex].copy(
+                    positionX = xRatio, positionY = yRatio
+                )
+            }
+        }
+        overlay.onScaleChanged = { scale ->
+            if (currentSubtitleIndex in app.subtitles.indices) {
+                app.subtitles[currentSubtitleIndex] = app.subtitles[currentSubtitleIndex].copy(
+                    scale = scale
+                )
+            }
+        }
 
-        overlay.onPositionChanged = { yRatio -> app.subtitlePositionY = yRatio }
-        overlay.onScaleChanged = { scale -> app.subtitleScale = scale }
-
+        overlayReady = true
         updateSubtitleDisplay()
+    }
+
+    /** 加载指定字幕条目的独立坐标到 overlay */
+    private fun applySubtitlePosition(entry: com.example.subtitleapp.model.SubtitleEntry) {
+        val overlay = binding.tvCurrentSubtitle as OutlineTextView
+        overlay.setScale(entry.scale)
+        overlay.setPositionInVideo(entry.positionX, entry.positionY)
     }
 
     private fun startSubtitleTracking() {
@@ -206,13 +218,20 @@ class EditorActivity : AppCompatActivity() {
         binding.tvCurrentSubtitle.visibility =
             if (current != null) View.VISIBLE else View.INVISIBLE
 
-        // 高亮并自动滚动到当前字幕
+        // 切换到新字幕时，加载该条目自己的坐标
         val idx = if (current != null) app.subtitles.indexOf(current) else -1
+        if (idx != currentSubtitleIndex) {
+            currentSubtitleIndex = idx
+            if (idx >= 0 && overlayReady) {
+                applySubtitlePosition(app.subtitles[idx])
+            }
+        }
+
+        // 高亮并自动滚动到当前字幕
         if (idx != adapter.highlightedPosition) {
             adapter.highlightedPosition = idx
             if (idx >= 0) {
                 val layoutManager = binding.rvSubtitles.layoutManager as? LinearLayoutManager
-                // 只在当前项不可见时才滚动，避免干扰用户编辑
                 val first = layoutManager?.findFirstCompletelyVisibleItemPosition() ?: 0
                 val last = layoutManager?.findLastCompletelyVisibleItemPosition() ?: 0
                 if (idx !in first..last) {
@@ -224,9 +243,7 @@ class EditorActivity : AppCompatActivity() {
 
     private fun setupButtons() {
         binding.btnExportVideo.setOnClickListener { exportVideo() }
-
     }
-
 
     private fun exportVideo() {
         val path = app.videoLocalPath ?: return
@@ -248,8 +265,6 @@ class EditorActivity : AppCompatActivity() {
                 videoPath = path,
                 subtitles = app.subtitles.toList(),
                 outputName = "subtitled_${System.currentTimeMillis()}",
-                positionY = app.subtitlePositionY,
-                fontScale = app.subtitleScale,
                 onProgress = { status ->
                     runOnUiThread { binding.tvExportStatus.text = status }
                 },

@@ -12,15 +12,15 @@ import android.view.View
 import androidx.appcompat.widget.AppCompatTextView
 
 /**
- * 带黑色描边的白色文字 TextView，支持拖拽和缩放。
+ * 带黑色描边的白色文字 TextView，支持 X/Y 自由拖拽和缩放。
  * 描边宽度与字号成比例，匹配 ASS Outline=3 的效果。
  */
 class OutlineTextView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyle: Int = 0
 ) : AppCompatTextView(context, attrs, defStyle) {
 
-    /** 拖动回调：返回字幕中心点在父容器中的 Y 比例 (0~1) */
-    var onPositionChanged: ((yRatio: Float) -> Unit)? = null
+    /** 拖动回调：返回字幕中心点在视频区域中的 X/Y 比例 (0~1) */
+    var onPositionChanged: ((xRatio: Float, yRatio: Float) -> Unit)? = null
     /** 缩放回调 */
     var onScaleChanged: ((scale: Float) -> Unit)? = null
 
@@ -31,8 +31,9 @@ class OutlineTextView @JvmOverloads constructor(
     private var videoRight = 0
 
     private var currentScale = 1.0f
-    private var baseFontSizePx = 0f  // 由外部根据视频显示高度计算后设置
+    private var baseFontSizePx = 0f
 
+    private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var isDragging = false
 
@@ -71,11 +72,18 @@ class OutlineTextView @JvmOverloads constructor(
         }
     }
 
-    /** 设置字幕中心 Y 在视频区域中的比例位置 */
-    fun setPositionInVideo(yRatio: Float) {
+    /** 设置字幕中心在视频区域中的 X/Y 比例位置 */
+    fun setPositionInVideo(xRatio: Float, yRatio: Float) {
         post {
-            if (videoBottom <= videoTop) return@post
+            if (videoBottom <= videoTop || videoRight <= videoLeft) return@post
+            val videoW = videoRight - videoLeft
             val videoH = videoBottom - videoTop
+
+            val targetCenterX = videoLeft + xRatio * videoW
+            x = (targetCenterX - width / 2f).coerceIn(
+                (videoLeft - width / 2f), (videoRight - width / 2f)
+            )
+
             val targetCenterY = videoTop + yRatio * videoH
             y = (targetCenterY - height / 2f).coerceIn(
                 videoTop.toFloat(), (videoBottom - height).toFloat()
@@ -87,7 +95,6 @@ class OutlineTextView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         val textColor = currentTextColor
-        // 描边宽度与字号成比例：ASS 中 Outline=3 对应 fontSize 的约 6%
         val strokeW = textSize * 0.06f
 
         paint.style = Paint.Style.STROKE
@@ -102,7 +109,7 @@ class OutlineTextView @JvmOverloads constructor(
         super.onDraw(canvas)
     }
 
-    // ---- 触摸：拖动 + 缩放 ----
+    // ---- 触摸：自由拖动 + 缩放 ----
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
@@ -110,6 +117,7 @@ class OutlineTextView @JvmOverloads constructor(
         if (event.pointerCount == 1 && !scaleDetector.isInProgress) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    lastTouchX = event.rawX
                     lastTouchY = event.rawY
                     isDragging = true
                     parent?.requestDisallowInterceptTouchEvent(true)
@@ -117,17 +125,29 @@ class OutlineTextView @JvmOverloads constructor(
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (isDragging) {
+                        val dx = event.rawX - lastTouchX
                         val dy = event.rawY - lastTouchY
+                        lastTouchX = event.rawX
                         lastTouchY = event.rawY
+
+                        val newX = (x + dx).coerceIn(
+                            (videoLeft - width / 2f), (videoRight - width / 2f)
+                        )
                         val newY = (y + dy).coerceIn(
                             videoTop.toFloat(), (videoBottom - height).toFloat()
                         )
+                        x = newX
                         y = newY
-                        // 计算中心点在视频区域中的 Y 比例
+
+                        val videoW = (videoRight - videoLeft).toFloat()
                         val videoH = (videoBottom - videoTop).toFloat()
-                        if (videoH > 0) {
+                        if (videoW > 0 && videoH > 0) {
+                            val centerX = newX + width / 2f - videoLeft
                             val centerY = newY + height / 2f - videoTop
-                            onPositionChanged?.invoke((centerY / videoH).coerceIn(0f, 1f))
+                            onPositionChanged?.invoke(
+                                (centerX / videoW).coerceIn(0f, 1f),
+                                (centerY / videoH).coerceIn(0f, 1f)
+                            )
                         }
                     }
                     return true

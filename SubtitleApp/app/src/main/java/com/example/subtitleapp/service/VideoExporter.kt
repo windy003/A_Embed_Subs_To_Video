@@ -28,16 +28,13 @@ object VideoExporter {
     )
 
     /**
-     * @param positionY  字幕垂直位置比例 (0.0=顶部, 1.0=底部)
-     * @param fontScale  字体缩放比例
+     * 每条字幕使用自身的 positionX/positionY/scale 独立坐标导出。
      */
     suspend fun exportWithSubtitles(
         context: Context,
         videoPath: String,
         subtitles: List<SubtitleEntry>,
         outputName: String = "output_subtitled",
-        positionY: Float = 0.85f,
-        fontScale: Float = 1.0f,
         onProgress: ((String) -> Unit)? = null,
         onPercent: ((Int) -> Unit)? = null
     ): ExportResult = withContext(Dispatchers.IO) {
@@ -56,9 +53,9 @@ object VideoExporter {
             val videoW = resolution.first
             val videoH = resolution.second
 
-            // 生成 ASS 字幕文件
+            // 生成 ASS 字幕文件（每条字幕使用独立坐标）
             val assFile = File(context.cacheDir, "sub.ass")
-            writeAssFile(subtitles, assFile, videoW, videoH, positionY, fontScale)
+            writeAssFile(subtitles, assFile, videoW, videoH)
 
             Log.d(TAG, "ASS path: ${assFile.absolutePath}, size=${assFile.length()}")
 
@@ -135,24 +132,14 @@ object VideoExporter {
         subtitles: List<SubtitleEntry>,
         file: File,
         videoW: Int,
-        videoH: Int,
-        positionY: Float,
-        fontScale: Float
+        videoH: Int
     ) {
         val playResX = if (videoW > 0) videoW else 1920
         val playResY = if (videoH > 0) videoH else 1080
 
-        // 基础字号：与预览一致 = playResY / 22 * fontScale
-        val fontSize = ((playResY / 22f) * fontScale).toInt()
-
-        // 描边宽度：与预览 OutlineTextView 一致 = fontSize * 6%
-        val outline = (fontSize * 0.06f).coerceAtLeast(1f).toInt()
-
-        // positionY 是字幕中心点在视频中的 Y 比例 (0=顶, 1=底)
-        // ASS 用 \pos 覆盖标记来精确定位，避免 Alignment+MarginV 的换算偏差
-        // Alignment=2(底部居中) 仅作为 fallback，实际位置由 \pos 控制
-        val posX = playResX / 2
-        val posY = (positionY * playResY).toInt().coerceIn(fontSize, playResY - 10)
+        // 默认字号（scale=1.0 时），用于 Style 行
+        val baseFontSize = (playResY / 22f).toInt()
+        val baseOutline = (baseFontSize * 0.06f).coerceAtLeast(1f).toInt()
 
         val sb = StringBuilder()
         sb.appendLine("[Script Info]")
@@ -162,7 +149,7 @@ object VideoExporter {
         sb.appendLine()
         sb.appendLine("[V4+ Styles]")
         sb.appendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
-        sb.appendLine("Style: Default,Noto Sans CJK SC,$fontSize,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,$outline,1,2,20,20,20,1")
+        sb.appendLine("Style: Default,Noto Sans CJK SC,$baseFontSize,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,$baseOutline,1,2,20,20,20,1")
         sb.appendLine()
         sb.appendLine("[Events]")
         sb.appendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
@@ -170,8 +157,14 @@ object VideoExporter {
             val start = msToAssTime(entry.startMs)
             val end = msToAssTime(entry.endMs)
             val text = entry.text.replace("\n", "\\N")
-            // 用 \pos(x,y) 精确控制位置，与预览完全对应
-            sb.appendLine("Dialogue: 0,$start,$end,Default,,0,0,0,,{\\pos($posX,$posY)}$text")
+
+            // 每条字幕使用自己的独立坐标
+            val posX = (entry.positionX * playResX).toInt().coerceIn(10, playResX - 10)
+            val posY = (entry.positionY * playResY).toInt().coerceIn(baseFontSize, playResY - 10)
+
+            // 每条字幕使用自己的缩放：通过 \fscx \fscy 覆盖标记实现
+            val scalePercent = (entry.scale * 100).toInt()
+            sb.appendLine("Dialogue: 0,$start,$end,Default,,0,0,0,,{\\pos($posX,$posY)\\fscx$scalePercent\\fscy$scalePercent}$text")
         }
         file.writeText(sb.toString(), Charsets.UTF_8)
     }
