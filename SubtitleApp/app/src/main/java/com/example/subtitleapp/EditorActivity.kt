@@ -18,7 +18,6 @@ import com.example.subtitleapp.adapter.SubtitleAdapter
 import com.example.subtitleapp.databinding.ActivityEditorBinding
 import com.example.subtitleapp.service.VideoExporter
 import com.example.subtitleapp.util.OutlineTextView
-import com.example.subtitleapp.util.SrtUtil
 import kotlinx.coroutines.launch
 import java.io.File
 

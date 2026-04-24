@@ -12,7 +12,6 @@ import com.antonkarpenko.ffmpegkit.FFmpegKit
 import com.antonkarpenko.ffmpegkit.ReturnCode
 import com.antonkarpenko.ffmpegkit.StatisticsCallback
 import com.example.subtitleapp.model.SubtitleEntry
-import com.example.subtitleapp.util.SrtUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
