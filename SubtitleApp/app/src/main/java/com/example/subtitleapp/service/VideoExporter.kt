@@ -215,17 +215,6 @@ object VideoExporter {
             if (rotation == 90 || rotation == 270) Pair(h, w) else Pair(w, h)
         } catch (_: Exception) { Pair(0, 0) }
     }
-
-    suspend fun exportSrt(
-        context: Context, subtitles: List<SubtitleEntry>, outputName: String = "subtitles"
-    ): ExportResult = withContext(Dispatchers.IO) {
-        try {
-            val f = File(context.getExternalFilesDir(null), "${outputName}.srt")
-            SrtUtil.writeSrt(subtitles, f)
-            ExportResult(true, outputPath = f.absolutePath)
-        } catch (e: Exception) { ExportResult(false, error = e.message ?: "导出失败") }
-    }
-
     private fun saveToMediaStore(context: Context, file: File, name: String): Uri? {
         return try {
             val values = ContentValues().apply {
