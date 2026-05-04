@@ -81,7 +81,7 @@ class OutlineTextView @JvmOverloads constructor(
 
             val targetCenterX = videoLeft + xRatio * videoW
             x = (targetCenterX - width / 2f).coerceIn(
-                (videoLeft - width / 2f), (videoRight - width / 2f)
+                videoLeft.toFloat(), (videoRight - width).toFloat()
             )
 
             val targetCenterY = videoTop + yRatio * videoH
